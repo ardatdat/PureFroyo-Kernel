@@ -29,8 +29,11 @@
  * It helps to keep variable names smaller, simpler
  */
 
-#define DEF_FREQUENCY_UP_THRESHOLD		(80)
-#define DEF_FREQUENCY_DOWN_THRESHOLD		(20)
+//PureFroyo 2010-10-26
+//#define DEF_FREQUENCY_UP_THRESHOLD		(80)
+//#define DEF_FREQUENCY_DOWN_THRESHOLD		(30)
+#define DEF_FREQUENCY_UP_THRESHOLD		(76)
+#define DEF_FREQUENCY_DOWN_THRESHOLD		(12)
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -39,7 +42,7 @@
  * transition latency <= 10mS, using appropriate sampling
  * rate.
  * For CPUs with transition latency > 10mS (mostly drivers with CPUFREQ_ETERNAL)
- * this governor will not work.
+ * this governor will not work.  
  * All times here are in uS.
  */
 #define MIN_SAMPLING_RATE_RATIO			(2)

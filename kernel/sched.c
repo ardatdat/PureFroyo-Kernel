@@ -1,3 +1,6 @@
+#ifdef CONFIG_SCHED_BFS
+#include "sched_bfs.c"
+#else
 /*
  *  kernel/sched.c
  *
@@ -723,7 +726,7 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 {
 	char buf[64];
 	char *cmp = buf;
-	int neg = 0;
+	int neg = 0, cmplen;
 	int i;
 
 	if (cnt > 63)
@@ -733,15 +736,24 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 		return -EFAULT;
 
 	buf[cnt] = 0;
+	for (i = 0; i < cnt; i++) {
+		if (buf[i] == '\n' || buf[i] == ' ') {
+			buf[i] = 0;
+			break;
+		}
+	}
 
 	if (strncmp(buf, "NO_", 3) == 0) {
 		neg = 1;
 		cmp += 3;
 	}
 
+	cmplen = strlen(cmp);
 	for (i = 0; sched_feat_names[i]; i++) {
 		int len = strlen(sched_feat_names[i]);
 
+		if (cmplen != len)
+			continue;
 		if (strncmp(cmp, sched_feat_names[i], len) == 0) {
 			if (neg)
 				sysctl_sched_features &= ~(1UL << i);
@@ -1976,6 +1988,9 @@ task_hot(struct task_struct *p, u64 now, struct sched_domain *sd)
 	if (p->sched_class != &fair_sched_class)
 		return 0;
 
+	if (p->policy == SCHED_IDLE)
+		return 0;
+
 	/*
 	 * Buddy candidates are cache hot:
 	 */
@@ -2280,6 +2295,20 @@ static int try_to_wake_up(struct task_struct *p, unsigned int state,
 	unsigned long en_flags = ENQUEUE_WAKEUP;
 	struct rq *rq;
 
+	if (sched_feat(INTERACTIVE) && !(wake_flags & WF_FORK)) {
+		if (current->sched_wake_interactive ||
+				wake_flags & WF_INTERACTIVE ||
+				current->se.interactive)
+			en_flags |= ENQUEUE_LATENCY;
+	}
+
+	if (sched_feat(TIMER) && !(wake_flags & WF_FORK)) {
+		if (current->sched_wake_timer ||
+				wake_flags & WF_TIMER ||
+				current->se.timer)
+			en_flags |= ENQUEUE_TIMER;
+	}
+
 	this_cpu = get_cpu();
 
 	smp_wmb();
@@ -2481,6 +2510,14 @@ void sched_fork(struct task_struct *p, int clone_flags)
 
 	if (!rt_prio(p->prio))
 		p->sched_class = &fair_sched_class;
+
+	if ((sched_feat(INTERACTIVE_FORK_EXPEDITED)
+	     && (current->sched_wake_interactive || current->se.interactive))
+	    || (sched_feat(TIMER_FORK_EXPEDITED)
+	     && (current->sched_wake_timer || current->se.timer)))
+		p->se.fork_expedited = 1;
+	else
+		p->se.fork_expedited = 0;
 
 	if (p->sched_class->task_fork)
 		p->sched_class->task_fork(p);
@@ -3605,8 +3642,13 @@ need_resched_nonpreemptible:
 	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
 		if (unlikely(signal_pending_state(prev->state, prev)))
 			prev->state = TASK_RUNNING;
-		else
+		else {
+			if (sched_feat(INTERACTIVE))
+				prev->se.interactive = 0;
+			if (sched_feat(TIMER))
+				prev->se.timer = 0;
 			deactivate_task(rq, prev, DEQUEUE_SLEEP);
+		}
 		switch_count = &prev->nvcsw;
 	}
 
@@ -4957,9 +4999,9 @@ void __sched io_schedule(void)
 
 	delayacct_blkio_start();
 	atomic_inc(&rq->nr_iowait);
-	current->in_iowait = 1;
+	current->sched_in_iowait = 1;
 	schedule();
-	current->in_iowait = 0;
+	current->sched_in_iowait = 0;
 	atomic_dec(&rq->nr_iowait);
 	delayacct_blkio_end();
 }
@@ -4972,9 +5014,9 @@ long __sched io_schedule_timeout(long timeout)
 
 	delayacct_blkio_start();
 	atomic_inc(&rq->nr_iowait);
-	current->in_iowait = 1;
+	current->sched_in_iowait = 1;
 	ret = schedule_timeout(timeout);
-	current->in_iowait = 0;
+	current->sched_in_iowait = 0;
 	atomic_dec(&rq->nr_iowait);
 	delayacct_blkio_end();
 	return ret;
@@ -9071,3 +9113,4 @@ void synchronize_sched_expedited(void)
 EXPORT_SYMBOL_GPL(synchronize_sched_expedited);
 
 #endif /* #else #ifndef CONFIG_SMP */
+#endif /* CONFIG_SCHED_BFS */

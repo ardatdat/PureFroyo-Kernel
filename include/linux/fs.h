@@ -687,6 +687,8 @@ struct block_device {
  */
 #define PAGECACHE_TAG_DIRTY	0
 #define PAGECACHE_TAG_WRITEBACK	1
+//PureFroyo
+#define PAGECACHE_TAG_TOWRITE  2
 
 int mapping_tagged(struct address_space *mapping, int tag);
 
