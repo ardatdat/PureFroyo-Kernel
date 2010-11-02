@@ -292,10 +292,14 @@ static inline void task_dirties_fraction(struct task_struct *tsk,
  *
  *   dirty -= (dirty/8) * p_{t}
  */
-static void task_dirty_limit(struct task_struct *tsk, unsigned long *pdirty)
+//static void task_dirty_limit(struct task_struct *tsk, unsigned long *pdirty)
+//PureFroyo
+static unsigned long task_dirty_limit(struct task_struct *tsk, unsigned long bdi_dirty)
 {
 	long numerator, denominator;
-	unsigned long dirty = *pdirty;
+	//unsigned long dirty = *pdirty; //PureFroyo
+	unsigned long dirty = bdi_dirty;
+
 	u64 inv = dirty >> 3;
 
 	task_dirties_fraction(tsk, &numerator, &denominator);
@@ -303,10 +307,12 @@ static void task_dirty_limit(struct task_struct *tsk, unsigned long *pdirty)
 	do_div(inv, denominator);
 
 	dirty -= inv;
-	if (dirty < *pdirty/2)
-		dirty = *pdirty/2;
+	//PureFroyo
+	//if (dirty < *pdirty/2)
+	//	dirty = *pdirty/2;
+	//*pdirty = dirty;
 
-	*pdirty = dirty;
+	return max(dirty, bdi_dirty/2);
 }
 
 /*
@@ -416,9 +422,11 @@ unsigned long determine_dirtyable_memory(void)
 	return x + 1;	/* Ensure that we never return 0 */
 }
 
-void
-get_dirty_limits(unsigned long *pbackground, unsigned long *pdirty,
-		 unsigned long *pbdi_dirty, struct backing_dev_info *bdi)
+//PureFroyo
+//void
+//get_dirty_limits(unsigned long *pbackground, unsigned long *pdirty,
+//		 unsigned long *pbdi_dirty, struct backing_dev_info *bdi)
+void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty)
 {
 	unsigned long background;
 	unsigned long dirty;
@@ -451,9 +459,15 @@ get_dirty_limits(unsigned long *pbackground, unsigned long *pdirty,
 	*pbackground = background;
 	*pdirty = dirty;
 
-	if (bdi) {
-		u64 bdi_dirty;
-		long numerator, denominator;
+}
+
+	//if (bdi) {
+	//	u64 bdi_dirty;
+	//	long numerator, denominator;
+unsigned long bdi_dirty_limit(struct backing_dev_info *bdi, unsigned long dirty)
+{
+	u64 bdi_dirty;
+	long numerator, denominator;
 
 		/*
 		 * Calculate this BDI's share of the dirty ratio.
@@ -467,10 +481,11 @@ get_dirty_limits(unsigned long *pbackground, unsigned long *pdirty,
 		if (bdi_dirty > (dirty * bdi->max_ratio) / 100)
 			bdi_dirty = dirty * bdi->max_ratio / 100;
 
-		*pbdi_dirty = bdi_dirty;
-		clip_bdi_dirty_limit(bdi, dirty, pbdi_dirty);
-		task_dirty_limit(current, pbdi_dirty);
-	}
+		//*pbdi_dirty = bdi_dirty;
+		//clip_bdi_dirty_limit(bdi, dirty, pbdi_dirty);
+		//task_dirty_limit(current, pbdi_dirty);
+	//}
+	return bdi_dirty;
 }
 
 /*
@@ -501,8 +516,8 @@ static void balance_dirty_pages(struct address_space *mapping,
 			.range_cyclic	= 1,
 		};
 
-		get_dirty_limits(&background_thresh, &dirty_thresh,
-				&bdi_thresh, bdi);
+		//get_dirty_limits(&background_thresh, &dirty_thresh,
+		//		&bdi_thresh, bdi);
 
 		nr_reclaimable = global_page_state(NR_FILE_DIRTY) +
 					global_page_state(NR_UNSTABLE_NFS);
@@ -511,16 +526,22 @@ static void balance_dirty_pages(struct address_space *mapping,
 		bdi_nr_reclaimable = bdi_stat(bdi, BDI_RECLAIMABLE);
 		bdi_nr_writeback = bdi_stat(bdi, BDI_WRITEBACK);
 
-		if (bdi_nr_reclaimable + bdi_nr_writeback <= bdi_thresh)
+		//PureFroyo
+		//if (bdi_nr_reclaimable + bdi_nr_writeback <= bdi_thresh)
+		//	break;
+
+		if (nr_reclaimable + nr_writeback < (background_thresh + dirty_thresh) / 2)
 			break;
+
+		bdi_thresh = bdi_dirty_limit(bdi, dirty_thresh);
+		bdi_thresh = task_dirty_limit(current, bdi_thresh);
 
 		/*
 		 * Throttle it only when the background writeback cannot
 		 * catch-up. This avoids (excessively) small writeouts
 		 * when the bdi limits are ramping up.
 		 */
-		if (nr_reclaimable + nr_writeback <
-				(background_thresh + dirty_thresh) / 2)
+		if (nr_reclaimable + nr_writeback < (background_thresh + dirty_thresh) / 2)
 			break;
 
 		if (!bdi->dirty_exceeded)
@@ -538,8 +559,10 @@ static void balance_dirty_pages(struct address_space *mapping,
 		if (bdi_nr_reclaimable > bdi_thresh) {
 			writeback_inodes_wb(&bdi->wb, &wbc);
 			pages_written += write_chunk - wbc.nr_to_write;
-			get_dirty_limits(&background_thresh, &dirty_thresh,
-				       &bdi_thresh, bdi);
+			//PureFroyo
+			//get_dirty_limits(&background_thresh, &dirty_thresh,
+			//	       &bdi_thresh, bdi);
+			global_dirty_limits(&background_thresh, &dirty_thresh);
 		}
 
 		/*
@@ -659,7 +682,10 @@ void throttle_vm_writeout(gfp_t gfp_mask)
 	unsigned long dirty_thresh;
 
         for ( ; ; ) {
-		get_dirty_limits(&background_thresh, &dirty_thresh, NULL, NULL);
+		//PureFroyo
+		//get_dirty_limits(&background_thresh, &dirty_thresh, NULL, NULL);
+
+		global_dirty_limits(&background_thresh, &dirty_thresh);
 
                 /*
                  * Boost the allowable dirty threshold a bit for page

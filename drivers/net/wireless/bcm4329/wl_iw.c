@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_iw.c,v 1.51.4.9.2.6.4.142.4.13 2010/09/15 03:34:56 Exp $
+ * $Id: wl_iw.c,v 1.51.4.9.2.6.4.142.4.28 2010/10/19 22:55:15 Exp $
  */
 
 
@@ -54,6 +54,7 @@ typedef const struct si_pub  si_t;
 #define WL_INFORM(x)
 #define WL_WSEC(x)
 #define WL_SCAN(x)
+#define WL_TRACE_COEX(x)
 
 #include <wl_iw.h>
 
@@ -219,6 +220,11 @@ typedef struct iscan_info {
 	int iscan_ex_param_size;
 } iscan_info_t;
 #define COEX_DHCP 1 
+
+#define BT_DHCP_eSCO_FIX
+#define BT_DHCP_USE_FLAGS
+#define BT_DHCP_OPPORTUNITY_WINDOW_TIME	 2500
+#define BT_DHCP_FLAG_FORCE_TIME 5500
 static void wl_iw_bt_flag_set(struct net_device *dev, bool set);
 static void wl_iw_bt_release(void);
 
@@ -228,18 +234,16 @@ typedef enum bt_coex_status {
 	BT_DHCP_OPPORTUNITY_WINDOW,
 	BT_DHCP_FLAG_FORCE_TIMEOUT
 } coex_status_t;
-#define BT_DHCP_OPPORTUNITY_WINDOW_TIEM	2500	
-#define BT_DHCP_FLAG_FORCE_TIME				5500 	
 
 typedef struct bt_info {
 	struct net_device *dev;
 	struct timer_list timer;
 	uint32 timer_ms;
 	uint32 timer_on;
-	int	bt_state;
+	bool   dhcp_done;
+	int    bt_state;
 
-	
-	long bt_pid;
+	long   bt_pid;
 	struct semaphore bt_sem;
 	struct completion bt_exited;
 } bt_info_t;
@@ -260,7 +264,7 @@ wl_iw_set_scan(
 	char *extra
 );
 
-#ifndef CSCAN
+#if !defined(CSCAN)
 static int
 wl_iw_get_scan(
 	struct net_device *dev,
@@ -664,11 +668,11 @@ wl_iw_set_power_mode(
 	int pm_local = PM_OFF;
 	char powermode_val = 0;
 
+	WL_TRACE_COEX(("%s: DHCP session cmd:%s\n", __FUNCTION__, extra));
+
 	strncpy((char *)&powermode_val, extra + strlen("POWERMODE") + 1, 1);
 
 	if (strnicmp((char *)&powermode_val, "1", strlen("1")) == 0) {
-
-		WL_TRACE(("%s: DHCP session starts\n", __FUNCTION__));
 
 		dev_wlc_ioctl(dev, WLC_GET_PM, &pm, sizeof(pm));
 		dev_wlc_ioctl(dev, WLC_SET_PM, &pm_local, sizeof(pm_local));
@@ -676,17 +680,22 @@ wl_iw_set_power_mode(
 		/* Disable packet filtering if necessary */
 		net_os_set_packet_filter(dev, 0);
 
-	} else if (strnicmp((char *)&powermode_val, "0", strlen("0")) == 0) {
+		g_bt->dhcp_done = false;
+		WL_TRACE_COEX(("%s: DHCP start, pm:%d changed to pm:%d\n",
+			__FUNCTION__, pm, pm_local));
 
-		WL_TRACE(("%s: DHCP session done\n", __FUNCTION__));
+	} else if (strnicmp((char *)&powermode_val, "0", strlen("0")) == 0) {
 
 		dev_wlc_ioctl(dev, WLC_SET_PM, &pm, sizeof(pm));
 
 		/* Enable packet filtering if was turned off */
 		net_os_set_packet_filter(dev, 1);
 
+		g_bt->dhcp_done = true;
+
 	} else {
-		WL_ERROR(("Unkwown yet power setting, ignored\n"));
+		WL_ERROR(("%s Unkwown yet power setting, ignored\n",
+			__FUNCTION__));
 	}
 
 	p += snprintf(p, MAX_WX_STRING, "OK");
@@ -694,6 +703,99 @@ wl_iw_set_power_mode(
 	wrqu->data.length = p - extra + 1;
 
 	return error;
+}
+#endif
+
+
+#if defined(BT_DHCP_eSCO_FIX)
+
+static int set_btc_esco_params(struct net_device *dev, bool trump_sco)
+{
+	static bool saved_status = false;
+
+	char buf_reg50va_dhcp_on[8] = { 50, 00, 00, 00, 0x22, 0x80, 0x00, 0x00 };
+	char buf_reg51va_dhcp_on[8] = { 51, 00, 00, 00, 0x00, 0x00, 0x00, 0x00 };
+	char buf_reg64va_dhcp_on[8] = { 64, 00, 00, 00, 0x00, 0x00, 0x00, 0x00 };
+	char buf_reg65va_dhcp_on[8] = { 65, 00, 00, 00, 0x00, 0x00, 0x00, 0x00 };
+	char buf_reg71va_dhcp_on[8] = { 71, 00, 00, 00, 0x00, 0x00, 0x00, 0x00 };
+
+	uint32 regaddr;
+	static uint32 saved_reg50;
+	static uint32 saved_reg51;
+	static uint32 saved_reg64;
+	static uint32 saved_reg65;
+	static uint32 saved_reg71;
+
+	if (trump_sco) {
+
+		WL_TRACE_COEX(("Do new SCO/eSCO coex algo {save & override} \n"));
+
+		if  ((!dev_wlc_intvar_get_reg(dev, "btc_params", 50,  &saved_reg50)) &&
+			(!dev_wlc_intvar_get_reg(dev, "btc_params", 51,  &saved_reg51)) &&
+			(!dev_wlc_intvar_get_reg(dev, "btc_params", 64,  &saved_reg64)) &&
+			(!dev_wlc_intvar_get_reg(dev, "btc_params", 65,  &saved_reg65)) &&
+			(!dev_wlc_intvar_get_reg(dev, "btc_params", 71,  &saved_reg71))) {
+
+			saved_status = TRUE;
+			WL_TRACE_COEX(("%s saved bt_params[50,51,64,65,71]:"
+				" 0x%x 0x%x 0x%x 0x%x 0x%x\n",
+				__FUNCTION__, saved_reg50, saved_reg51,
+				saved_reg64, saved_reg65, saved_reg71));
+
+		} else {
+			WL_ERROR((":%s: save btc_params failed\n",
+				__FUNCTION__));
+			saved_status = false;
+			return -1;
+		}
+
+		WL_TRACE_COEX(("override with [50,51,64,65,71]:"
+			" 0x%x 0x%x 0x%x 0x%x 0x%x\n",
+			*(u32 *)(buf_reg50va_dhcp_on+4),
+			*(u32 *)(buf_reg51va_dhcp_on+4),
+			*(u32 *)(buf_reg64va_dhcp_on+4),
+			*(u32 *)(buf_reg65va_dhcp_on+4),
+			*(u32 *)(buf_reg71va_dhcp_on+4)));
+
+		dev_wlc_bufvar_set(dev, "btc_params", (char *)&buf_reg50va_dhcp_on[0], 8);
+		dev_wlc_bufvar_set(dev, "btc_params", (char *)&buf_reg51va_dhcp_on[0], 8);
+		dev_wlc_bufvar_set(dev, "btc_params", (char *)&buf_reg64va_dhcp_on[0], 8);
+		dev_wlc_bufvar_set(dev, "btc_params", (char *)&buf_reg65va_dhcp_on[0], 8);
+		dev_wlc_bufvar_set(dev, "btc_params", (char *)&buf_reg71va_dhcp_on[0], 8);
+
+		saved_status = true;
+
+	} else if (saved_status) {
+
+		WL_TRACE_COEX(("Do new SCO/eSCO coex algo {save & override} \n"));
+
+		regaddr = 50;
+		dev_wlc_intvar_set_reg(dev, "btc_params",
+			(char *)&regaddr, (char *)&saved_reg50);
+		regaddr = 51;
+		dev_wlc_intvar_set_reg(dev, "btc_params",
+			(char *)&regaddr, (char *)&saved_reg51);
+		regaddr = 64;
+		dev_wlc_intvar_set_reg(dev, "btc_params",
+			(char *)&regaddr, (char *)&saved_reg64);
+		regaddr = 65;
+		dev_wlc_intvar_set_reg(dev, "btc_params",
+			(char *)&regaddr, (char *)&saved_reg65);
+		regaddr = 71;
+		dev_wlc_intvar_set_reg(dev, "btc_params",
+			(char *)&regaddr, (char *)&saved_reg71);
+
+		WL_TRACE_COEX(("restore bt_params[50,51,64,65,71]: 0x%x 0x%x 0x%x 0x%x 0x%x\n",
+			saved_reg50, saved_reg51, saved_reg64,
+			saved_reg65, saved_reg71));
+
+		saved_status = false;
+	} else {
+		WL_ERROR((":%s att to restore not saved BTCOEX params\n",
+			__FUNCTION__));
+		return -1;
+	}
+	return 0;
 }
 #endif
 
@@ -764,7 +866,7 @@ wl_iw_set_btcoex_dhcp(
 
 	if (strnicmp((char *)&powermode_val, "1", strlen("1")) == 0) {
 
-		WL_TRACE(("%s: DHCP session starts\n", __FUNCTION__));
+		WL_TRACE_COEX(("%s: DHCP session start, cmd:%s\n", __FUNCTION__, extra));
 
 		if ((saved_status == FALSE) &&
 #ifndef CUSTOMER_HW2
@@ -774,7 +876,7 @@ wl_iw_set_btcoex_dhcp(
 			(!dev_wlc_intvar_get_reg(dev, "btc_params", 41,  &saved_reg41)) &&
 			(!dev_wlc_intvar_get_reg(dev, "btc_params", 68,  &saved_reg68)))   {
 				saved_status = TRUE;
-				WL_TRACE(("Saved 0x%x 0x%x 0x%x\n", \
+				WL_TRACE_COEX(("save regs {66,41,68} ->: 0x%x 0x%x 0x%x\n", \
 					saved_reg66, saved_reg41, saved_reg68));
 
 #ifndef CUSTOMER_HW2
@@ -796,7 +898,7 @@ wl_iw_set_btcoex_dhcp(
 						g_bt->bt_state = BT_DHCP_START;
 						g_bt->timer_on = 1;
 						mod_timer(&g_bt->timer, g_bt->timer.expires);
-						WL_TRACE(("%s enable BT DHCP Timer\n", \
+						WL_TRACE_COEX(("%s enable BT DHCP Timer\n", \
 							__FUNCTION__));
 #ifndef CUSTOMER_HW2
 					}
@@ -812,16 +914,22 @@ wl_iw_set_btcoex_dhcp(
 #else
 	else if (strnicmp((char *)&powermode_val, "0", strlen("0")) == 0) {
 #endif
-		WL_TRACE(("%s: DHCP session done\n", __FUNCTION__));
 
 #ifndef CUSTOMER_HW2
 		dev_wlc_ioctl(dev, WLC_SET_PM, &pm, sizeof(pm));
 #endif
 
-		WL_TRACE(("%s disable BT DHCP Timer\n", __FUNCTION__));
+		WL_TRACE_COEX(("%s disable BT DHCP Timer\n", __FUNCTION__));
 		if (g_bt->timer_on) {
 			g_bt->timer_on = 0;
 			del_timer_sync(&g_bt->timer);
+
+			if (g_bt->bt_state != BT_DHCP_IDLE) {
+				WL_TRACE_COEX(("%s bt->bt_state:%d\n",
+					__FUNCTION__, g_bt->bt_state));
+
+				up(&g_bt->bt_sem);
+			}
 		}
 
 		dev_wlc_bufvar_set(dev, "btc_flags", \
@@ -837,11 +945,15 @@ wl_iw_set_btcoex_dhcp(
 			regaddr = 68;
 			dev_wlc_intvar_set_reg(dev, "btc_params", \
 				(char *)&regaddr, (char *)&saved_reg68);
+
+			WL_TRACE_COEX(("restore regs {66,41,68} <- 0x%x 0x%x 0x%x\n", \
+					saved_reg66, saved_reg41, saved_reg68));
 		}
 		saved_status = FALSE;
 	}
 	else {
-		WL_ERROR(("Unkwown yet power setting, ignored\n"));
+		WL_ERROR(("%s Unkwown yet power setting, ignored\n",
+			__FUNCTION__));
 	}
 
 	p += snprintf(p, MAX_WX_STRING, "OK");
@@ -1063,7 +1175,6 @@ wl_iw_set_band(
 
 		if ((band == WLC_BAND_AUTO) || (band == WLC_BAND_5G) || (band == WLC_BAND_2G)) {
 
-			
 			if ((error = dev_wlc_ioctl(dev, WLC_SET_BAND,
 				&band, sizeof(band))) >= 0) {
 				p += snprintf(p, MAX_WX_STRING, "OK");
@@ -1165,15 +1276,15 @@ wl_iw_set_pno_set(
 	wlc_ssid_t ssids_local[MAX_PFN_LIST_COUNT];
 	int nssid = 0;
 	cmd_tlv_t *cmd_tlv_temp;
-	char type;
 	char *str_ptr;
+	char *str_ptr_end;
 	int tlv_size_left;
 	int pno_time;
 
 #ifdef PNO_SET_DEBUG
 	int i;
 	char pno_in_example[] = {'P', 'N', 'O', 'S', 'E', 'T', 'U', 'P', ' ', \
-							'S', 0x01, 0x01, 0x00,
+							'S', '1', '2', '0',
 							'S',
 							0x04,
 							'B', 'R', 'C', 'M',
@@ -1181,8 +1292,8 @@ wl_iw_set_pno_set(
 							0x04,
 							'G', 'O', 'O', 'G',
 							'T',
-							0x00,
-							0x0A
+							'1','E',
+							0x00
 							};
 #endif
 
@@ -1239,29 +1350,15 @@ wl_iw_set_pno_set(
 			goto exit_proc;
 		}
 		else {
-			while (tlv_size_left > 0)
-			{
-				type = str_ptr[0];
-				switch (type) {
-					case PNO_TLV_TYPE_TIME:
-
-					if ((res = wl_iw_parse_data_tlv(&str_ptr, \
-						&pno_time, \
-						sizeof(pno_time), \
-						type, sizeof(short), &tlv_size_left)) == -1) {
-							WL_ERROR(("%s return %d\n", \
-							__FUNCTION__, res));
-							goto exit_proc;
-					}
-					break;
-
-					default:
-						WL_ERROR(("%s get unkwown type %X\n", \
-							__FUNCTION__, type));
-						goto exit_proc;
-					break;
-				}
+			if ((str_ptr[0] != PNO_TLV_TYPE_TIME) || (tlv_size_left <= 1)) {
+				WL_ERROR(("%s scan duration corrupted field size %d\n", \
+						__FUNCTION__, tlv_size_left));
+				goto exit_proc;
 			}
+			str_ptr++;
+			pno_time = simple_strtoul(str_ptr, &str_ptr_end, 16);
+			WL_ERROR((" got %d bytes left pno_time %d or %#x\n", \
+					tlv_size_left, pno_time, pno_time));
 		}
 	}
 	else {
@@ -1300,19 +1397,24 @@ wl_iw_get_rssi(
 		error = dev_wlc_ioctl(dev, WLC_GET_RSSI, &scb_val, sizeof(scb_val_t));
 		if (error) {
 			WL_ERROR(("%s: Fails %d\n", __FUNCTION__, error));
-			net_os_wake_unlock(dev);
-			return error;
-		}
-		rssi = dtoh32(scb_val.val);
+		} else {
+			rssi = dtoh32(scb_val.val);
 
-		error = dev_wlc_ioctl(dev, WLC_GET_SSID, &ssid, sizeof(ssid));
-		if (!error) {
-			ssid.SSID_len = dtoh32(ssid.SSID_len);
-			wl_format_ssid(ssidbuf, ssid.SSID, dtoh32(ssid.SSID_len));
+			error = dev_wlc_ioctl(dev, WLC_GET_SSID, &ssid, sizeof(ssid));
+			if (!error) {
+				ssid.SSID_len = dtoh32(ssid.SSID_len);
+				wl_format_ssid(ssidbuf, ssid.SSID, dtoh32(ssid.SSID_len));
+			}
 		}
 	}
 
-	p += snprintf(p, MAX_WX_STRING, "%s rssi %d ", ssidbuf, rssi);
+	WL_ASSOC(("%s ssid_len:%d, rssi:%d\n", __FUNCTION__, ssid.SSID_len, rssi));
+
+	if (error || (ssid.SSID_len == 0)) {
+		p += snprintf(p, MAX_WX_STRING, "FAIL");
+	} else {
+		p += snprintf(p, MAX_WX_STRING, "%s rssi %d ", ssidbuf, rssi);
+	}
 	wrqu->data.length = p - extra + 1;
 
 	net_os_wake_unlock(dev);
@@ -3418,7 +3520,7 @@ wl_iw_handle_scanresults_ies(char **event_p, char *end,
 	return 0;
 }
 
-#ifndef CSCAN
+#if !defined(CSCAN)
 static uint
 wl_iw_get_scan_prep(
 	wl_scan_results_t *list,
@@ -3431,6 +3533,7 @@ wl_iw_get_scan_prep(
 	wl_bss_info_t *bi = NULL;
 	char *event = extra, *end = extra + max_size - WE_ADD_EVENT_FIX, *value;
 	int	ret = 0;
+	int channel;
 
 	ASSERT(list);
 
@@ -3468,8 +3571,9 @@ wl_iw_get_scan_prep(
 
 		
 		iwe.cmd = SIOCGIWFREQ;
-		iwe.u.freq.m = wf_channel2mhz(CHSPEC_CHANNEL(bi->chanspec),
-			CHSPEC_CHANNEL(bi->chanspec) <= CH_MAX_2G_CHANNEL ?
+		channel = (bi->ctl_ch == 0) ? CHSPEC_CHANNEL(bi->chanspec) : bi->ctl_ch;
+		iwe.u.freq.m = wf_channel2mhz(channel,
+			channel <= CH_MAX_2G_CHANNEL ?
 			WF_CHAN_FACTOR_2_4_G : WF_CHAN_FACTOR_5_G);
 		iwe.u.freq.e = 6;
 		event = IWE_STREAM_ADD_EVENT(info, event, end, &iwe, IW_EV_FREQ_LEN);
@@ -7246,8 +7350,6 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 	uint32 datalen = ntoh32(e->datalen);
 	uint32 status =  ntoh32(e->status);
 	uint32 toto;
-	static uint32 roam_no_success = 0;
-	static bool roam_no_success_send = FALSE;
 
 	memset(&wrqu, 0, sizeof(wrqu));
 	memset(extra, 0, sizeof(extra));
@@ -7313,24 +7415,13 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 		break;
 	case WLC_E_ROAM:
 		if (status != WLC_E_STATUS_SUCCESS) {
-			roam_no_success++;
-			if ((roam_no_success == 3) && (roam_no_success_send == FALSE)) {
-
-				roam_no_success_send = TRUE;
-				bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
-				bzero(&extra, ETHER_ADDR_LEN);
-				cmd = SIOCGIWAP;
-				WL_ERROR(("%s  ROAMING did not succeeded , send Link Down\n", \
-					__FUNCTION__));
-			} else {
-				WL_TRACE(("##### ROAMING did not succeeded %d\n", roam_no_success));
-				goto wl_iw_event_end;
-			}
-		} else {
-			memcpy(wrqu.addr.sa_data, &e->addr.octet, ETHER_ADDR_LEN);
-			wrqu.addr.sa_family = ARPHRD_ETHER;
-			cmd = SIOCGIWAP;
+			WL_ERROR(("ROAMING did not succeeded, keep status Quo\n"));
+			goto wl_iw_event_end;
 		}
+
+		memcpy(wrqu.addr.sa_data, &e->addr.octet, ETHER_ADDR_LEN);
+		wrqu.addr.sa_family = ARPHRD_ETHER;
+		cmd = SIOCGIWAP;
 		break;
 	case WLC_E_DEAUTH_IND:
 	case WLC_E_DISASSOC_IND:
@@ -7386,8 +7477,6 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 				wl_iw_send_priv_event(priv_dev, "AP_UP");
 			} else {
 				WL_TRACE(("STA_LINK_UP\n"));
-				roam_no_success_send = FALSE;
-				roam_no_success = 0;
 			}
 #endif
 			WL_TRACE(("Link UP\n"));
@@ -7618,13 +7707,21 @@ wl_iw_bt_flag_set(
 	struct net_device *dev,
 	bool set)
 {
+#if defined(BT_DHCP_USE_FLAGS)
 	char buf_flag7_dhcp_on[8] = { 7, 00, 00, 00, 0x1, 0x0, 0x00, 0x00 };
 	char buf_flag7_default[8]   = { 7, 00, 00, 00, 0x0, 0x00, 0x00, 0x00};
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 	rtnl_lock();
 #endif
 
+#if defined(BT_DHCP_eSCO_FIX)
+	set_btc_esco_params(dev, set);
+#endif
+
+#if defined(BT_DHCP_USE_FLAGS)
+	WL_TRACE_COEX(("WI-FI priority boost via bt flags, set:%d\n", set));
 	if (set == TRUE) {
 		dev_wlc_bufvar_set(dev, "btc_flags",
 					(char *)&buf_flag7_dhcp_on[0], sizeof(buf_flag7_dhcp_on));
@@ -7633,6 +7730,7 @@ wl_iw_bt_flag_set(
 		dev_wlc_bufvar_set(dev, "btc_flags",
 					(char *)&buf_flag7_default[0], sizeof(buf_flag7_default));
 	}
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 	rtnl_unlock();
@@ -7665,14 +7763,23 @@ _bt_dhcp_sysioc_thread(void *data)
 
 		switch (g_bt->bt_state) {
 			case BT_DHCP_START:
+				WL_TRACE_COEX(("%s bt_dhcp stm: started \n", __FUNCTION__));
 				g_bt->bt_state = BT_DHCP_OPPORTUNITY_WINDOW;
-				mod_timer(&g_bt->timer, jiffies + BT_DHCP_OPPORTUNITY_WINDOW_TIEM*HZ/1000);
+				mod_timer(&g_bt->timer, jiffies + BT_DHCP_OPPORTUNITY_WINDOW_TIME*HZ/1000);
 				g_bt->timer_on = 1;
 				break;
 
 			case BT_DHCP_OPPORTUNITY_WINDOW:
-				WL_TRACE(("%s waiting for %d msec expired, force bt flag\n", \
-						__FUNCTION__, BT_DHCP_OPPORTUNITY_WINDOW_TIEM));
+				if (g_bt->dhcp_done) {
+					WL_TRACE_COEX(("%s DHCP Done before T1 expiration\n", \
+						__FUNCTION__));
+					g_bt->bt_state = BT_DHCP_IDLE;
+					g_bt->timer_on = 0;
+					break;
+				}
+
+				WL_TRACE_COEX(("%s DHCP T1:%d expired\n", \
+						__FUNCTION__, BT_DHCP_OPPORTUNITY_WINDOW_TIME));
 				if (g_bt->dev) wl_iw_bt_flag_set(g_bt->dev, TRUE);
 				g_bt->bt_state = BT_DHCP_FLAG_FORCE_TIMEOUT;
 				mod_timer(&g_bt->timer, jiffies + BT_DHCP_FLAG_FORCE_TIME*HZ/1000);
@@ -7680,9 +7787,14 @@ _bt_dhcp_sysioc_thread(void *data)
 				break;
 
 			case BT_DHCP_FLAG_FORCE_TIMEOUT:
-				WL_TRACE(("%s waiting for %d msec expired remove bt flag\n", \
+				if (g_bt->dhcp_done) {
+					WL_TRACE_COEX(("%s DHCP Done before T2 expiration\n", \
+						__FUNCTION__));
+				} else {
+					WL_TRACE_COEX(("%s DHCP wait interval T2:%d msec expired\n",
 						__FUNCTION__, BT_DHCP_FLAG_FORCE_TIME));
-				
+				}
+
 				if (g_bt->dev)  wl_iw_bt_flag_set(g_bt->dev, FALSE);
 				g_bt->bt_state = BT_DHCP_IDLE;
 				g_bt->timer_on = 0;

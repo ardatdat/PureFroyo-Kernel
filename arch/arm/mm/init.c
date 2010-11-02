@@ -513,7 +513,8 @@ static void __init free_unused_memmap_node(int node, struct meminfo *mi)
 		 * If we had a previous bank, and there is a space
 		 * between the current bank and the previous, free it.
 		 */
-		if (prev_bank_end && prev_bank_end != bank_start)
+		//PureFroyo 2010-10-25
+		if (prev_bank_end && prev_bank_end < bank_start)
 			free_memmap(node, prev_bank_end, bank_start);
 
 		prev_bank_end = bank_pfn_end(bank);
@@ -711,3 +712,4 @@ static int __init keepinitrd_setup(char *__unused)
 
 __setup("keepinitrd", keepinitrd_setup);
 #endif
+

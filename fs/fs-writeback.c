@@ -59,7 +59,9 @@ struct wb_writeback_work {
  */
 int writeback_in_progress(struct backing_dev_info *bdi)
 {
-	return !list_empty(&bdi->work_list);
+	//PureFroyo
+	return test_bit(BDI_writeback_running, &bdi->state);
+	//return !list_empty(&bdi->work_list);
 }
 
 static void bdi_queue_work(struct backing_dev_info *bdi,
@@ -239,10 +241,20 @@ static void move_expired_inodes(struct list_head *delaying_queue,
 
 /*
  * Queue all expired dirty inodes for io, eldest first.
+ * Before
+ *         newly dirtied     b_dirty    b_io    b_more_io
+ *         =============>    gf         edc     BA
+ * After
+ *         newly dirtied     b_dirty    b_io    b_more_io
+ *         =============>    g          fBAedc
+ *                                           |
+ *                                           +--> dequeue for IO
  */
 static void queue_io(struct bdi_writeback *wb, unsigned long *older_than_this)
 {
-	list_splice_init(&wb->b_more_io, wb->b_io.prev);
+	//PureFroyo
+	//list_splice_init(&wb->b_more_io, wb->b_io.prev);
+	list_splice_init(&wb->b_more_io, &wb->b_io);
 	move_expired_inodes(&wb->b_dirty, &wb->b_io, older_than_this);
 }
 
@@ -379,25 +391,28 @@ writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 			 * reasons for doing it this way, and I'd rather not
 			 * muck with it at present.
 			 */
-			if (wbc->for_kupdate) {
+			//PureFroyo// if (wbc->for_kupdate) {
+			inode->i_state |= I_DIRTY_PAGES;			
+			if (wbc->nr_to_write <= 0) {
 				/*
 				 * For the kupdate function we move the inode
 				 * to b_more_io so it will get more writeout as
 				 * soon as the queue becomes uncongested.
 				 */
-				inode->i_state |= I_DIRTY_PAGES;
+				////inode->i_state |= I_DIRTY_PAGES;
 select_queue:
-				if (wbc->nr_to_write <= 0) {
+				////if (wbc->nr_to_write <= 0) {
 					/*
 					 * slice used up: queue for next turn
 					 */
-					requeue_io(inode);
-				} else {
-					/*
-					 * somehow blocked: retry later
-					 */
-					redirty_tail(inode);
-				}
+				////	requeue_io(inode);
+				////} else {
+				////	/*
+				////	 * somehow blocked: retry later
+				////	 */
+				////	redirty_tail(inode);
+				////}
+				requeue_io(inode);
 			} else {
 				/*
 				 * Otherwise fully redirty the inode so that
@@ -406,7 +421,7 @@ select_queue:
 				 * file would indefinitely suspend writeout of
 				 * all the other files.
 				 */
-				inode->i_state |= I_DIRTY_PAGES;
+				//PureFroyo // inode->i_state |= I_DIRTY_PAGES;
 				redirty_tail(inode);
 			}
 		} else if (atomic_read(&inode->i_count)) {
@@ -580,7 +595,9 @@ static inline bool over_bground_thresh(void)
 {
 	unsigned long background_thresh, dirty_thresh;
 
-	get_dirty_limits(&background_thresh, &dirty_thresh, NULL, NULL);
+	//PureFroyo
+	//get_dirty_limits(&background_thresh, &dirty_thresh, NULL, NULL);
+	global_dirty_limits(&background_thresh, &dirty_thresh);
 
 	return (global_page_state(NR_FILE_DIRTY) +
 		global_page_state(NR_UNSTABLE_NFS) >= background_thresh);
@@ -743,6 +760,8 @@ long wb_do_writeback(struct bdi_writeback *wb, int force_wait)
 	struct wb_writeback_work *work;
 	long wrote = 0;
 
+	//PureFroyo	
+	set_bit(BDI_writeback_running, &wb->bdi->state);
 	while ((work = get_next_work_item(bdi, wb)) != NULL) {
 		/*
 		 * Override sync mode, in case we must wait for completion
@@ -767,6 +786,8 @@ long wb_do_writeback(struct bdi_writeback *wb, int force_wait)
 	 * Check for periodic writeback, kupdated() style
 	 */
 	wrote += wb_check_old_data_flush(wb);
+	//PureFroyo
+	clear_bit(BDI_writeback_running, &wb->bdi->state);
 
 	return wrote;
 }
