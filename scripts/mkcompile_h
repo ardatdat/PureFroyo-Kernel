@@ -70,7 +70,7 @@ UTS_TRUNCATE="cut -b -$UTS_LEN"
 #########################################################
 ##  echo \#define LINUX_COMPILE_BY \"`whoami`\"
 ##  echo \#define LINUX_COMPILE_HOST \"`hostname | $UTS_TRUNCATE`\"
-  echo \#define LINUX_COMPILE_BY \"pf\"
+  echo \#define LINUX_COMPILE_BY \"ardatdat\"
   echo \#define LINUX_COMPILE_HOST \"pf\"
 
   domain=`dnsdomainname 2> /dev/null`
