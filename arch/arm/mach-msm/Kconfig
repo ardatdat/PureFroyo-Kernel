@@ -53,6 +53,54 @@ config MSM_MDP40
 	depends on ARCH_MSM7X30
 	default y
 
+config PERFLOCK
+  depends on CPU_FREQ
+  depends on ARCH_QSD8X50 || ARCH_MSM7X30 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  default n
+  bool "HTC Performance Lock"
+
+config PERFLOCK_BOOT_LOCK
+  depends on PERFLOCK
+  depends on ARCH_QSD8X50 || ARCH_MSM7X30 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  default n
+  bool "Boot Time Performance Lock"
+
+config PERFLOCK_SCREEN_POLICY
+  depends on PERFLOCK
+  depends on ARCH_QSD8X50 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  default n
+  bool "Change Cpufreq Policy while Screen ON/OFF"
+
+config PERFLOCK_SCREEN_ON_MIN
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Minimum speed while screen on"
+  default 245000
+
+config PERFLOCK_SCREEN_ON_MAX
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Maximum speed while screen on"
+  default 883200
+
+config PERFLOCK_SCREEN_OFF_MIN
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Minimum speed while screen off"
+  default 245000
+
+config PERFLOCK_SCREEN_OFF_MAX
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Maximum speed while screen off"
+  default 883200 
+
+config MSM_CPU_FREQ_MIN
+        int "Min CPU Frequency"
+        default 245000
+
+config MSM_CPU_FREQ_MAX
+        int "Max CPU Frequency"
+        default 883200
+
+
+
 config MSM_REMOTE_SPINLOCK_DEKKERS
 	bool
 
@@ -229,6 +277,15 @@ config HTC_PWRSINK
 	depends on MSM_SMD
 	default y
 	bool "HTC Power Sink Driver"
+
+config HTC_POWER_COLLAPSE_MAGIC
+  default n
+  bool "Check Power Collapse State"
+
+config HTC_ONMODE_CHARGING
+  default n
+  bool "Low-power hibernate charging support"
+
 
 config CACHE_FLUSH_RANGE_LIMIT
 	hex "Cache flush range limit"

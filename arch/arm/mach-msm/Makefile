@@ -10,6 +10,7 @@ obj-$(CONFIG_ARCH_MSM7X30) += acpuclock-7x30.o
 obj-y += clock.o clock-pcom.o
 obj-y += gpio.o generic_gpio.o
 obj-y += nand_partitions.o
+obj-y += devices.o
 
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
@@ -69,6 +70,8 @@ obj-$(CONFIG_HTC_PWRSINK) += htc_pwrsink.o
 obj-$(CONFIG_HTC_PWRSPLY) += htc_power_supply.o
 obj-$(CONFIG_HTC_HEADSET) += htc_headset.o
 obj-$(CONFIG_HTC_35MM_JACK) += htc_35mm_jack.o
+obj-$(CONFIG_PERFLOCK) += perflock.o
+obj-$(CONFIG_PERFLOCK) += htc_set_perflock.o
 
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-tpa2018d1.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-smb329.o
