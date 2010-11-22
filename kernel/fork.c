@@ -176,7 +176,6 @@ static inline void free_signal_struct(struct signal_struct *sig)
 
 static inline void put_signal_struct(struct signal_struct *sig)
 {
-	//if (atomic_dec_and_test(&sig->sigcnt))
 	if (atomic_dec_and_test(&sig->sigcnt)) {
 		sched_autogroup_exit(sig);
 		free_signal_struct(sig);
@@ -922,6 +921,7 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 	sched_autogroup_fork(sig);
 
 	sig->oom_adj = current->signal->oom_adj;
+	sig->oom_score_adj = current->signal->oom_score_adj;
 
 	return 0;
 }

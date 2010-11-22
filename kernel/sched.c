@@ -272,6 +272,10 @@ struct task_group {
 	struct task_group *parent;
 	struct list_head siblings;
 	struct list_head children;
+
+#ifdef CONFIG_SCHED_AUTOGROUP
+	struct autogroup *autogroup;
+#endif
 };
 
 #define root_task_group init_task_group
@@ -620,8 +624,8 @@ static inline struct task_group *task_group(struct task_struct *p)
 
 	css = task_subsys_state_check(p, cpu_cgroup_subsys_id,
 			lockdep_is_held(&task_rq(p)->lock));
-	//return container_of(css, struct task_group, css);
 	tg = container_of(css, struct task_group, css);
+
 	return autogroup_task_group(p, tg);
 }
 
@@ -7596,7 +7600,6 @@ void __init sched_init(void)
 #ifdef CONFIG_CGROUP_SCHED
 	list_add(&init_task_group.list, &task_groups);
 	INIT_LIST_HEAD(&init_task_group.children);
-	
 	autogroup_init(&init_task);
 #endif /* CONFIG_CGROUP_SCHED */
 
@@ -8128,16 +8131,15 @@ void sched_destroy_group(struct task_group *tg)
 /* change task's runqueue when it moves between groups.
  *	The caller of this function should have put the task in its new group
  *	by now. This function just updates tsk->se.cfs_rq and tsk->se.parent to
- *	reflect its new group.  Called with the runqueue lock held.
+ *	reflect its new group.
  */
-//void sched_move_task(struct task_struct *tsk)
-void __sched_move_task(struct task_struct *tsk, struct rq *rq)
+void sched_move_task(struct task_struct *tsk)
 {
 	int on_rq, running;
-	//unsigned long flags;
-	//struct rq *rq;
-	//
-	//rq = task_rq_lock(tsk, &flags);
+	unsigned long flags;
+	struct rq *rq;
+
+	rq = task_rq_lock(tsk, &flags);
 
 	running = task_current(rq, tsk);
 	on_rq = tsk->se.on_rq;
@@ -8163,15 +8165,7 @@ void __sched_move_task(struct task_struct *tsk, struct rq *rq)
 		tsk->sched_class->set_curr_task(rq);
 	if (on_rq)
 		enqueue_task(rq, tsk, 0);
-}
 
-void sched_move_task(struct task_struct *tsk)
-{
-	struct rq *rq;
-	unsigned long flags;
-
-	rq = task_rq_lock(tsk, &flags);
-	__sched_move_task(tsk, rq);
 	task_rq_unlock(rq, &flags);
 }
 #endif /* CONFIG_CGROUP_SCHED */
