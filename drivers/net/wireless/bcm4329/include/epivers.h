@@ -33,23 +33,16 @@
 
 #define	EPI_RC_NUMBER		248
 
-#define	EPI_INCREMENTAL_NUMBER	6
+#define	EPI_INCREMENTAL_NUMBER	15
 
 #define	EPI_BUILD_NUMBER	0
 
-#define	EPI_VERSION		4, 218, 248, 6
+#define	EPI_VERSION		4, 218, 248, 15
 
-#define	EPI_VERSION_NUM		0x04daf806
+#define	EPI_VERSION_NUM		0x04daf80f
 
-#define	EPI_VERSION_STR		"4.218.248.6"
-#define	EPI_ROUTER_VERSION_STR	"4.219.248.6"
 
-///#define	EPI_INCREMENTAL_NUMBER	13
-///#define	EPI_BUILD_NUMBER	0
-///#define	EPI_VERSION		4, 218, 248, 13
-///#define	EPI_VERSION_NUM		0x04daf80d
-///#define	EPI_VERSION_STR		"4.218.248.13"
-///#define	EPI_ROUTER_VERSION_STR	"4.219.248.13"
-///>>>>>>> 1fb696e... net: wireless: bcm4329: Add FW Reload event processing
+#define	EPI_VERSION_STR		"4.218.248.15"
+#define	EPI_ROUTER_VERSION_STR	"4.219.248.15"
 
 #endif 
