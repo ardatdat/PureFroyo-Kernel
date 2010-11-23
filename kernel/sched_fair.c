@@ -54,13 +54,16 @@ enum sched_tunable_scaling sysctl_sched_tunable_scaling
  * Minimal preemption granularity for CPU-bound tasks:
  * (default: 2 msec * (1 + ilog(ncpus)), units: nanoseconds)
  */
-unsigned int sysctl_sched_min_granularity = 7500000ULL;
-unsigned int normalized_sysctl_sched_min_granularity = 7500000ULL;
+////unsigned int sysctl_sched_min_granularity = 7500000ULL;
+////unsigned int normalized_sysctl_sched_min_granularity = 7500000ULL;
+unsigned int sysctl_sched_min_granularity = 4726000ULL;
+unsigned int normalized_sysctl_sched_min_granularity = 4726000ULL;
 
 /*
  * is kept at sysctl_sched_latency / sysctl_sched_min_granularity
  */
-static unsigned int sched_nr_latency = 8;
+////static unsigned int sched_nr_latency = 8;
+static unsigned int sched_nr_latency = 6;
 
 /*
  * After fork, child runs first. If set to 0 (default) then
@@ -301,9 +304,11 @@ static inline s64 entity_key(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	return se->vruntime - cfs_rq->min_vruntime;
 }
 
-static void update_min_vruntime(struct cfs_rq *cfs_rq, unsigned long delta_exec)
+////static void update_min_vruntime(struct cfs_rq *cfs_rq, unsigned long delta_exec)
+static void update_min_vruntime(struct cfs_rq *cfs_rq)
 {
-	u64 vruntime = cfs_rq->min_vruntime, new_vruntime;
+	////u64 vruntime = cfs_rq->min_vruntime, new_vruntime;
+	u64 vruntime = cfs_rq->min_vruntime;
 
 	if (cfs_rq->curr)
 		vruntime = cfs_rq->curr->vruntime;
@@ -319,12 +324,13 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq, unsigned long delta_exec)
 			vruntime = min_vruntime(vruntime, se->vruntime);
 	}
 
-	new_vruntime = cfs_rq->min_vruntime;
-	if (sched_feat(DYN_MIN_VRUNTIME) && delta_exec)
-		new_vruntime += calc_delta_mine(delta_exec, NICE_0_LOAD,
-						&cfs_rq->load);
+	////new_vruntime = cfs_rq->min_vruntime;
+	////if (sched_feat(DYN_MIN_VRUNTIME) && delta_exec)
+	////	new_vruntime += calc_delta_mine(delta_exec, NICE_0_LOAD,
+	////					&cfs_rq->load);
 
-	cfs_rq->min_vruntime = max_vruntime(new_vruntime, vruntime);
+	////cfs_rq->min_vruntime = max_vruntime(new_vruntime, vruntime);
+	cfs_rq->min_vruntime = max_vruntime(cfs_rq->min_vruntime, vruntime);
 }
 
 /*
@@ -518,7 +524,8 @@ __update_curr(struct cfs_rq *cfs_rq, struct sched_entity *curr,
 	delta_exec_weighted = calc_delta_fair(delta_exec, curr);
 
 	curr->vruntime += delta_exec_weighted;
-	update_min_vruntime(cfs_rq, delta_exec);
+	////update_min_vruntime(cfs_rq, delta_exec);
+	update_min_vruntime(cfs_rq);
 }
 
 static void update_curr(struct cfs_rq *cfs_rq)
@@ -751,10 +758,12 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		vruntime += sched_vslice(cfs_rq, se);
 
 	/* sleeps up to a single latency don't count. */
-	if (!initial
-	    && (sched_feat(FAIR_SLEEPERS)
-	       || (sched_feat(FAIR_SLEEPERS_TIMER) && se->timer)
-	       || (sched_feat(FAIR_SLEEPERS_INTERACTIVE) && se->interactive))) {
+	////PureFroyo
+	//if (!initial
+	//    && (sched_feat(FAIR_SLEEPERS)
+	//       || (sched_feat(FAIR_SLEEPERS_TIMER) && se->timer)
+	//       || (sched_feat(FAIR_SLEEPERS_INTERACTIVE) && se->interactive))) {
+	if (!initial) {
 		unsigned long thresh = sysctl_sched_latency;
 
 		/*
@@ -847,7 +856,8 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	if (se != cfs_rq->curr)
 		__dequeue_entity(cfs_rq, se);
 	account_entity_dequeue(cfs_rq, se);
-	update_min_vruntime(cfs_rq, 0);
+	////update_min_vruntime(cfs_rq, 0);
+	update_min_vruntime(cfs_rq);
 
 	/*
 	 * Normalize the entity after updating the min_vruntime because the
