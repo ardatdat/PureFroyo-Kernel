@@ -743,10 +743,11 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	/*
 	 * Expedite forks when requested rather than putting forked thread in a
 	 * delayed slot.
-	 */
+
 	if ((sched_feat(INTERACTIVE_FORK_EXPEDITED)
 	    || sched_feat(TIMER_FORK_EXPEDITED)) && se->fork_expedited)
 		initial = 0;
+	 */
 
 	/*
 	 * The 'current' period is already promised to the current tasks,
