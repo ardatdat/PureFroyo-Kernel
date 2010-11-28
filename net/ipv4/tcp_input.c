@@ -4042,6 +4042,9 @@ static void tcp_reset(struct sock *sk)
 		sk->sk_err = ECONNRESET;
 	}
 
+	/* This barrier is coupled with smp_rmb() in tcp_poll() */
+	smp_wmb();
+
 	if (!sock_flag(sk, SOCK_DEAD))
 		sk->sk_error_report(sk);
 
