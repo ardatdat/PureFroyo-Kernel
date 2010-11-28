@@ -733,7 +733,8 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 		size_t cnt, loff_t *ppos)
 {
 	char buf[64];
-	char *cmp = buf;
+	////char *cmp = buf;
+	char *cmp;
 	int neg = 0, cmplen;
 	int i;
 
@@ -744,6 +745,8 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 		return -EFAULT;
 
 	buf[cnt] = 0;
+	cmp = strstrip(buf);
+
 	for (i = 0; i < cnt; i++) {
 		if (buf[i] == '\n' || buf[i] == ' ') {
 			buf[i] = 0;
@@ -758,11 +761,12 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 
 	cmplen = strlen(cmp);
 	for (i = 0; sched_feat_names[i]; i++) {
-		int len = strlen(sched_feat_names[i]);
+		////int len = strlen(sched_feat_names[i]);
 
 		if (cmplen != len)
 			continue;
-		if (strncmp(cmp, sched_feat_names[i], len) == 0) {
+		////if (strncmp(cmp, sched_feat_names[i], len) == 0) {
+		if (strcmp(cmp, sched_feat_names[i]) == 0) {
 			if (neg)
 				sysctl_sched_features &= ~(1UL << i);
 			else
@@ -1851,11 +1855,11 @@ static void dec_nr_running(struct rq *rq)
 
 static void set_load_weight(struct task_struct *p)
 {
-	if (task_has_rt_policy(p)) {
-		p->se.load.weight = 0;
-		p->se.load.inv_weight = WMULT_CONST;
-		return;
-	}
+	////if (task_has_rt_policy(p)) {
+	////	p->se.load.weight = 0;
+	////	p->se.load.inv_weight = WMULT_CONST;
+	////	return;
+	////}
 
 	/*
 	 * SCHED_IDLE tasks get minimal weight:
