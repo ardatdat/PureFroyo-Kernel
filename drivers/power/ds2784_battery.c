@@ -403,10 +403,25 @@ static int battery_get_property(struct power_supply *psy,
 	return 0;
 }
 
-/* Here we begin to add the functions for our device attribute
- * files which act as our link from kernel space to user space.
+/* Here we begin to add our device attribute files which is our link from
+ * kernel space to user space. These files appear under
+ * /sys/devices/platform/ds2784-battery/ and are named setreg, dumpreg,
+ * statusreg, getvoltage and getcurrent. These files/functions allow us to
+ * interact with the battery's read and write functions which is the
+ * foundation for a re-calibration mode app along with a number of other
+ * features/advantages.
  *
+ * Here we call out the functions and the device attribute macros, and in the
+ * probe function (end of this driver) we call out the actual file creations.
  * --RogerPodacter, theloginwithnoname
+ */
+
+/* setreg - this creates a file called "setreg" and allows us to
+ * echo 2 values with a space between them, register and value, which
+ * calls the battery write function.  For example, "echo 0x14 0x80"
+ * writes register 0x14 with a value of 0x80.
+ *
+ * --RogerPodacter
  */
 
 static ssize_t store_set_reg(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -618,7 +633,8 @@ static ssize_t show_set_age(struct device *dev, struct device_attribute *attr, c
 
 	pr_info("batt: age_scalar life left is: %d\n", age);
 
-	ret = sprintf(buf, "Battery's age: %d", age);
+	//ret = sprintf(buf, "Battery's age: %d", age);
+	ret = sprintf(buf, "%d\n", age);
 	return ret;
 
 }
@@ -644,7 +660,8 @@ static ssize_t store_set_age(struct device *dev, struct device_attribute *attr, 
 	return count;
 }
 
-static DEVICE_ATTR(setage, 0644, show_set_age, store_set_age);
+//static DEVICE_ATTR(setage, 0644, show_set_age, store_set_age);
+static DEVICE_ATTR(age, 0644, show_set_age, store_set_age);
 
 static ssize_t show_set_AEvolt(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -688,12 +705,13 @@ static ssize_t store_set_AEvolt (struct device *dev, struct device_attribute *at
 
 	temp = ( ( val * 100 ) / 1952 ) ;
 
-	pr_info("batt: Active Empty Voltage set to: %d percent\n", temp);
+	pr_info("batt: Active Empty Voltage set to: %d volts\n", temp);
 
 	return count;
 }
 
-static DEVICE_ATTR(setAEvolt, 0644, show_set_AEvolt, store_set_AEvolt);
+//static DEVICE_ATTR(setAEvolt, 0644, show_set_AEvolt, store_set_AEvolt);
+static DEVICE_ATTR(voltAE, 0644, show_set_AEvolt, store_set_AEvolt);
 
 static ssize_t show_get_full40(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -743,9 +761,7 @@ static ssize_t show_get_mAh(struct device *dev, struct device_attribute *attr, c
 
 static DEVICE_ATTR(getmAh, 0644, show_get_mAh, NULL);
 
-/*End of file functions edits
- *--RP
- */
+/*End of file functions edits --RP*/
 
 static void ds2784_battery_update_status(struct ds2784_device_info *di)
 {
@@ -800,11 +816,9 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
          *
          * Set 99 for Passion - pershoot
 	 */
-
-	if (di->status.percentage < 99) {
-		di->status.battery_full = 0;
-	}
-
+	////if (di->status.percentage < 99) {
+	////	di->status.battery_full = 0;
+	////}
 	/* Changed this code if-statement back to stock because this
 	 * parameter is now user settable by changing the actual
        * register value inside the battery chip EEPROM.
@@ -840,8 +854,8 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
 			charge_mode = CHARGE_BATT_DISABLE;
 	}
 
-//	if (di->status.current_uA > 1024)
-	if (di->status.battery_full == 1)
+////	if (di->status.battery_full == 1)
+	if (di->status.current_uA > 1024)
 		di->last_charge_seen = di->last_poll;
 	else if (di->last_charge_mode != CHARGE_OFF &&
 		 check_timeout(di->last_poll, di->last_charge_seen, 60 * 60)) {
@@ -1058,13 +1072,17 @@ static int ds2784_battery_probe(struct platform_device *pdev)
 	if(ret < 0)
 	    pr_err("%s: Failed to create sysfs entry for avg current\n", __func__);
 
-	ret = device_create_file(&pdev->dev, &dev_attr_setage);
+	////ret = device_create_file(&pdev->dev, &dev_attr_setage);
+	    ret = device_create_file(&pdev->dev, &dev_attr_age);
 	if(ret < 0)
-	    pr_err("%s: Failed to create sysfs entry for setage\n", __func__);
+  	        pr_err("%s: Failed to create sysfs entry for age\n", __func__);
+	    ////pr_err("%s: Failed to create sysfs entry for setage\n", __func__);
 
-	ret = device_create_file(&pdev->dev, &dev_attr_setAEvolt);
+	////ret = device_create_file(&pdev->dev, &dev_attr_setAEvolt);
+	    ret = device_create_file(&pdev->dev, &dev_attr_voltAE);
 	if(ret < 0)
-	    pr_err("%s: Failed to create sysfs entry for setAEvolt\n", __func__);
+	        pr_err("%s: Failed to create sysfs entry for voltAE\n", __func__);
+	    ////pr_err("%s: Failed to create sysfs entry for setAEvolt\n", __func__);
 
 	ret = device_create_file(&pdev->dev, &dev_attr_getFull40);
 	if(ret < 0)
