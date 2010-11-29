@@ -816,9 +816,12 @@ static int battery_adjust_charge_state(struct ds2784_device_info *di)
          *
          * Set 99 for Passion - pershoot
 	 */
-	////if (di->status.percentage < 99) {
-	////	di->status.battery_full = 0;
-	////}
+
+	/*** Keep this for Nexus One ***/
+	if (di->status.percentage < 99) {
+		di->status.battery_full = 0;
+	}
+
 	/* Changed this code if-statement back to stock because this
 	 * parameter is now user settable by changing the actual
        * register value inside the battery chip EEPROM.
